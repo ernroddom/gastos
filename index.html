@@ -12,8 +12,8 @@
 <meta name="apple-mobile-web-app-title" content="Gastos">
 <title>Gastos</title>
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="icon" href="./icon-192.png">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" href="./icon-192-v3.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon-v3.png">
 <style>
   :root {
     --bg: #111214; --panel: #1A1C1F; --panel2: #23262A; --line: #2E3237;
@@ -65,6 +65,12 @@
   .empty { color: var(--muted); text-align: center; padding: 18px 0; font-size: 14px; }
   .add-btn { background: var(--accent); color: #0d150c; }
   .add-btn:active { background: var(--accent); filter: brightness(.9); }
+  .mic-wrap { display: grid; place-items: center; padding: 18px 0 6px; }
+  .mic-ring { width: 96px; height: 96px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #0d150c;
+    animation: pulse 1.4s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(89,161,79,.55); } 100% { box-shadow: 0 0 0 26px rgba(89,161,79,0); } }
+  .heard { min-height: 3em; text-align: center; font-size: 18px; margin: 16px 0 4px; }
+  .hint { text-align: center; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: rgba(17,18,20,.94);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--line);
     display: grid; grid-template-columns: 1fr 1fr; padding: 6px 0 calc(env(safe-area-inset-bottom) + 6px); }
@@ -139,6 +145,9 @@
       <button class="icon-btn" id="btnCfg" aria-label="Ajustes">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
+      <button class="icon-btn hidden" id="btnMic" aria-label="Dictar gasto">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+      </button>
       <button class="icon-btn add-btn hidden" id="btnAdd" aria-label="Añadir gasto">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
@@ -196,6 +205,7 @@
 <div class="sheet" id="sheetNew" role="dialog" aria-label="Nuevo gasto">
   <div class="grab"></div>
   <h3>Nuevo gasto</h3>
+  <div class="hint" id="fAviso" style="text-align:left;margin:-4px 0 12px"></div>
   <input class="amount-in" id="fImporte" inputmode="decimal" placeholder="0,00 €" autocomplete="off">
   <label>Categoría</label>
   <div class="chips" id="fCats"></div>
@@ -213,6 +223,20 @@
   </div>
   <button class="btn primary" id="fSave">Guardar</button>
   <div class="err" id="fErr"></div>
+</div>
+
+<!-- Hoja: dictado -->
+<div class="sheet" id="sheetMic" role="dialog" aria-label="Dictar gasto">
+  <div class="grab"></div>
+  <h3>Dicta el gasto</h3>
+  <div class="mic-wrap"><div class="mic-ring">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+  </div></div>
+  <div class="heard" id="micText">Escuchando…</div>
+  <div class="hint">Por ejemplo: «23,50 en Mercadona», «gasolina 40 euros ayer» o «cena en restaurante 44 euros el día 14».</div>
+  <button class="btn primary" id="micDone">Listo</button>
+  <button class="btn ghost" id="micCancel">Cancelar</button>
+  <div class="err" id="micErr"></div>
 </div>
 
 <!-- Hoja: detalle / borrar -->
@@ -291,6 +315,7 @@
     $('tbResumen').classList.toggle('on', r);
     $('tbMovs').classList.toggle('on', !r);
     $('btnAdd').classList.toggle('hidden', r);
+    $('btnMic').classList.toggle('hidden', r);
     $('btnReload').classList.toggle('hidden', !r);
     $('title').textContent = r ? 'Resumen' : 'Movimientos';
     store.set(K.tab, r ? 'resumen' : 'movs');
@@ -410,14 +435,15 @@
   // ---------- Hojas inferiores
   function abrir(id) { $('sheetBg').classList.add('open'); $(id).classList.add('open'); }
   function cerrar() { $('sheetBg').classList.remove('open'); document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open')); }
-  $('sheetBg').onclick = cerrar;
+  $('sheetBg').onclick = () => { if (rec) { try { rec.onend = null; rec.abort(); } catch {} rec = null; } cerrar(); };
 
   function fechaHoy() {
     const t = new Date(); const p = (n) => String(n).padStart(2, '0');
     return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
   }
 
-  $('btnAdd').onclick = () => {
+  function abrirNuevo(pre) {
+    pre = pre || {};
     const cats = state.datos ? state.datos.categorias : [];
     state.cat = null;
     $('fCats').innerHTML = cats.map((c, i) => `<button class="chip" data-c="${esc(c)}" data-col="${COLORES[i % COLORES.length]}"><span class="dot" style="background:${COLORES[i % COLORES.length]}"></span>${esc(c)}</button>`).join('')
@@ -427,11 +453,147 @@
       $('fCats').querySelectorAll('.chip').forEach(x => { x.classList.remove('on'); x.style.background = ''; });
       b.classList.add('on'); b.style.background = b.dataset.col;
     });
-    $('fImporte').value = ''; $('fConcepto').value = ''; $('fNotas').value = '';
-    $('fFecha').value = fechaHoy(); $('fErr').textContent = '';
+    $('fImporte').value = pre.importe ? String(pre.importe).replace('.', ',') : '';
+    $('fConcepto').value = pre.concepto || '';
+    $('fNotas').value = '';
+    $('fFecha').value = pre.fecha || fechaHoy(); $('fErr').textContent = '';
+    if (pre.categoria) {
+      const b = [...$('fCats').querySelectorAll('.chip')].find(x => x.dataset.c === pre.categoria);
+      if (b) b.click();
+    }
+    $('fAviso').textContent = pre.aviso || '';
     abrir('sheetNew');
-    setTimeout(() => $('fImporte').focus(), 250);
+    if (!pre.importe) setTimeout(() => $('fImporte').focus(), 250);
+  }
+  $('btnAdd').onclick = () => abrirNuevo();
+
+  // ---------- Dictado
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, oido = '';
+  const norm = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const PALABRAS = {
+    'Vivienda': ['alquiler','hipoteca','comunidad','reparacion','mueble','casa'],
+    'Facturas': ['luz','agua','gas','internet','fibra','movil','telefono','seguro','factura','recibo'],
+    'Compra': ['mercadona','supermercado','lidl','carrefour','dia','aldi','compra','mercado','fruteria','panaderia','drogueria'],
+    'Transporte': ['gasolina','gasoil','diesel','parking','aparcamiento','taxi','uber','cabify','bus','autobus','metro','tren','peaje','taller','itv'],
+    'Restaurantes': ['restaurante','cena','comida','almuerzo','desayuno','bar','cafe','cerveza','tapas','freiduria','pizza','burger','hamburguesa','glovo','delivery'],
+    'Ocio': ['cine','concierto','padel','pista','futbol','gimnasio','videojuego','juego','libro','copas','copa','loteria','decimo','teatro','entrada','ocio'],
+    'Suscripciones': ['suscripcion','netflix','spotify','hbo','disney','amazon prime','prime','icloud','youtube'],
+    'Salud': ['farmacia','medico','dentista','optica','fisio','fisioterapeuta','medicina','analisis'],
+    'Ropa': ['ropa','zapatos','zapatillas','camiseta','pantalon','camisa','chaqueta','corbata','abrigo'],
+    'Impuestos': ['impuesto','irpf','ibi','hacienda','multa','tasa'],
+    'Viajes': ['viaje','hotel','vuelo','avion','airbnb','vacaciones','billete'],
+    'Otros': ['regalo','otros','varios']
   };
+  const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+  function interpretar(texto) {
+    let t = ' ' + texto.trim() + ' ';
+    let n = norm(t);
+    const out = {};
+    const p2 = (x) => String(x).padStart(2, '0');
+    const iso = (d) => d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+    const quitar = (re) => { t = t.replace(re, ' '); n = norm(t); };
+
+    // importe: «12,50», «12.5», «12 euros con 50», «12 con 50»
+    let m = n.match(/(\d+)\s*(?:euros?|€)?\s*con\s*(\d{1,2})\b(?:\s*(?:centimos?|cts?))?/);
+    if (m) { out.importe = Number(m[1] + '.' + m[2].padStart(2, '0')); quitar(new RegExp(m[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')); }
+    else {
+      m = n.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)?/);
+      if (m) { out.importe = Number(m[1].replace(',', '.')); }
+    }
+    t = t.replace(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)\b/i, ' ');
+    if (out.importe) t = t.replace(new RegExp('\\b' + String(m && m[1] || '').replace(/[.,]/, '[.,]') + '\\b'), ' ');
+    n = norm(t);
+
+    // fecha
+    const hoy = new Date(); hoy.setHours(12, 0, 0, 0);
+    if (/\banteayer\b/.test(n)) { const d = new Date(hoy); d.setDate(d.getDate() - 2); out.fecha = iso(d); quitar(/\banteayer\b/i); }
+    else if (/\bayer\b/.test(n)) { const d = new Date(hoy); d.setDate(d.getDate() - 1); out.fecha = iso(d); quitar(/\bayer\b/i); }
+    else if (/\bhoy\b/.test(n)) { out.fecha = iso(hoy); quitar(/\bhoy\b/i); }
+    else {
+      m = n.match(/\b(?:el\s+)?(?:dia\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/);
+      if (m) {
+        const mes = MESES_L.indexOf(m[2]); let y = hoy.getFullYear();
+        if (mes > hoy.getMonth()) y--;
+        out.fecha = iso(new Date(y, mes, Number(m[1]), 12));
+        quitar(/\b(?:el\s+)?(?:d[ií]a\s+)?\d{1,2}\s+de\s+\S+/i);
+      } else {
+        m = n.match(/\bel\s+dia\s+(\d{1,2})\b/);
+        if (m) {
+          const d = new Date(hoy.getFullYear(), hoy.getMonth(), Number(m[1]), 12);
+          if (d > hoy) d.setMonth(d.getMonth() - 1);
+          out.fecha = iso(d); quitar(/\bel\s+d[ií]a\s+\d{1,2}\b/i);
+        }
+      }
+    }
+
+    // categoría: nombre exacto o palabras clave
+    const cats = state.datos ? state.datos.categorias : Object.keys(PALABRAS);
+    let cat = cats.find(c => new RegExp('\\b' + norm(c) + '\\b').test(n));
+    if (cat && new RegExp('\\b(?:categoria|en)\\s+' + norm(cat) + '\\b').test(n)) {
+      quitar(new RegExp('\\b(?:categor[ií]a\\s+)?' + cat + '\\b', 'i'));
+    }
+    if (!cat) {
+      for (const c of cats) {
+        const ws = PALABRAS[c] || [];
+        if (ws.some(w => new RegExp('\\b' + w + '\\b').test(n))) { cat = c; break; }
+      }
+    }
+    if (cat) out.categoria = cat;
+
+    // concepto: lo que queda, sin muletillas
+    let c = t.replace(/(?<!\S)(he gastado|me he gastado|gast[eé]|pagado|pagu[eé]|apunta|anota|un gasto de|gasto de|gasto)(?!\S)/gi, ' ')
+             .replace(/\s+([,.])/g, '$1').replace(/[,.]\s*$/, '').replace(/\s{2,}/g, ' ').trim();
+    for (let k = 0; k < 2; k++) {
+      c = c.replace(/^(en|de|por|a|el|la|del)\s+/i, '').replace(/\s+(en|de|por|del|a)$/i, '').trim();
+    }
+    if (c) out.concepto = c.charAt(0).toUpperCase() + c.slice(1);
+    return out;
+  }
+
+  function terminarDictado(usar) {
+    if (rec) { try { rec.onend = null; rec.stop(); } catch {} rec = null; }
+    cerrar();
+    if (!usar) return;
+    const texto = oido.trim();
+    if (!texto) { toast('No he oído nada'); return; }
+    const pre = interpretar(texto);
+    const falta = [];
+    if (!pre.importe) falta.push('el importe');
+    if (!pre.categoria) falta.push('la categoría');
+    pre.aviso = 'Has dicho: «' + texto + '»' + (falta.length ? '. Revisa ' + falta.join(' y ') + '.' : '. Revisa y guarda.');
+    setTimeout(() => abrirNuevo(pre), 280);
+  }
+
+  $('btnMic').onclick = () => {
+    if (!SR) {
+      toast('Este navegador no permite dictar aquí. Usa el micro del teclado.');
+      abrirNuevo({ aviso: 'Pulsa el micro del teclado para dictar el concepto.' });
+      return;
+    }
+    oido = '';
+    $('micText').textContent = 'Escuchando…'; $('micErr').textContent = '';
+    abrir('sheetMic');
+    rec = new SR();
+    rec.lang = 'es-ES'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      let fin = '', tmp = '';
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) fin += e.results[i][0].transcript; else tmp += e.results[i][0].transcript;
+      }
+      oido = (fin || tmp);
+      $('micText').textContent = '«' + (fin + tmp) + '»';
+    };
+    rec.onerror = (e) => {
+      $('micErr').textContent = e.error === 'not-allowed' ? 'Da permiso al micrófono en el navegador y vuelve a probar.'
+        : e.error === 'no-speech' ? 'No he oído nada. Prueba otra vez.' : 'Error del micrófono: ' + e.error;
+    };
+    rec.onend = () => { if (oido.trim()) terminarDictado(true); };
+    try { rec.start(); } catch (err) { $('micErr').textContent = 'No se pudo iniciar el micrófono.'; }
+  };
+  $('micDone').onclick = () => terminarDictado(true);
+  $('micCancel').onclick = () => terminarDictado(false);
 
   function leerImporte(txt) {
     let s = String(txt).replace(/[€\s]/g, '');
