@@ -1,6 +1,6 @@
 // Service worker de la app Gastos. Su alcance es solo /gastos/,
 // así que no toca la caché ni las peticiones de otras apps del dominio.
-const CACHE = 'gastos-v1';
+const CACHE = 'gastos-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
