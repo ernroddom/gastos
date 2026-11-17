@@ -1583,29 +1583,16 @@
     $('vistaAnio').querySelectorAll('.chart .col').forEach(el => el.onclick = () => { state.mes = Number(el.dataset.m); setVista('mes'); cargar(); });
   }
 
-  // ---------- Previsión del mes en curso
+  // ---------- Aviso de presupuesto (mes en curso)
   function pintarPrevision(d, total) {
     const el = $('forecast'), h = new Date();
-    if (!(h.getFullYear() === state.anio && h.getMonth() + 1 === state.mes) || h.getDate() < 3 || !total) { el.classList.add('hidden'); return; }
+    if (!(h.getFullYear() === state.anio && h.getMonth() + 1 === state.mes) || h.getDate() < 3 || !total || !d.presupuestos) { el.classList.add('hidden'); return; }
     const dia = h.getDate(), diasMes = new Date(state.anio, state.mes, 0).getDate();
-    const clave = state.anio + '-' + String(state.mes).padStart(2, '0');
-    const fijosHechos = d.movimientos.filter(m => m.notas === 'Gasto fijo mensual').reduce((a, m) => a + m.importe, 0);
-    const puntuales = d.movimientos.filter(m => /^Repartido en/.test(m.notas)).reduce((a, m) => a + m.importe, 0);
-    const fijosPend = (d.recurrentes || []).filter(r => r.activo && r.ultimo < clave && r.dia > dia).reduce((a, r) => a + r.importe, 0);
-    const variable = Math.max(0, total - fijosHechos - puntuales);
-    const prev = total + variable / dia * (diasMes - dia) + fijosPend;
-    const pres = (d.presupuestos || []).reduce((a, b) => a + (b || 0), 0);
-    let txt = `A este ritmo acabarás ${MESES_L[state.mes - 1]} en unos <b>${eur.format(Math.round(prev / 5) * 5)}</b>`;
-    const media = d.comparativa && d.comparativa.media;
-    if (media) txt += prev > media * 1.05 ? `, <b class="up">por encima</b> de tu media (${eur.format(media)})` : prev < media * 0.95 ? `, <b class="down">por debajo</b> de tu media (${eur.format(media)})` : `, en línea con tu media (${eur.format(media)})`;
-    txt += '.';
-    if (fijosPend) txt += ` Incluye ${eur.format(fijosPend)} de gastos fijos que aún no han llegado.`;
-    if (pres && d.presupuestos) {
-      const filaMes = d.porMes[state.mes - 1] || [];
-      const pasa = d.categorias.filter((c, i) => d.presupuestos[i] && filaMes[i] / dia * diasMes > d.presupuestos[i] && filaMes[i] <= d.presupuestos[i]);
-      if (pasa.length) txt += ` Ojo: a este ritmo te pasarás en ${pasa.join(', ')}.`;
-    }
-    el.innerHTML = txt; el.classList.remove('hidden');
+    const filaMes = d.porMes[state.mes - 1] || [];
+    const pasa = d.categorias.filter((c, i) => d.presupuestos[i] && filaMes[i] / dia * diasMes > d.presupuestos[i] && filaMes[i] <= d.presupuestos[i]);
+    if (!pasa.length) { el.classList.add('hidden'); return; }
+    el.innerHTML = `<b>Ojo:</b> a este ritmo te pasarás en ${pasa.map(esc).join(', ')}.`;
+    el.classList.remove('hidden');
   }
 
   // ---------- Deshacer
@@ -1697,7 +1684,7 @@
     '<b>Lista de la compra:</b> nueva pestaña Compra. Añade escribiendo o por voz («leche, pan y huevos»), se ordena sola por secciones del súper, tacha lo que vas cogiendo y al terminar apunta el gasto.',
     '<b>Ingresos y ahorro:</b> pestaña Ingresos y tarjeta con tu tasa de ahorro en el Resumen. Las aportaciones a inversión no cuentan como gasto.',
     '<b>Vista anual:</b> pulsa «Año» arriba en el Resumen.',
-    '<b>Previsión:</b> una frase te dice cómo acabarás el mes a este ritmo.',
+    '<b>Aviso de presupuesto:</b> si a este ritmo vas a pasarte en alguna categoría, el Resumen te avisa.',
     '<b>Monedero:</b> en Gastos, lleva la cuenta de tu efectivo.',
     '<b>Compartidos, fijos, forma de pago y buscador</b> en la pestaña Gastos.',
     '<b>Deshacer</b> al borrar o editar, y aviso si apuntas algo dos veces.',
