@@ -474,9 +474,9 @@
   const PALABRAS = {
     'Vivienda': ['alquiler','hipoteca','comunidad','reparacion','mueble','casa'],
     'Facturas': ['luz','agua','gas','internet','fibra','movil','telefono','seguro','factura','recibo'],
-    'Compra': ['mercadona','supermercado','lidl','carrefour','dia','aldi','compra','mercado','fruteria','panaderia','drogueria'],
+    'Compra': ['mantecados','turron','mercadona','supermercado','lidl','carrefour','dia','aldi','compra','mercado','fruteria','panaderia','drogueria'],
     'Transporte': ['gasolina','gasoil','diesel','parking','aparcamiento','taxi','uber','cabify','bus','autobus','metro','tren','peaje','taller','itv'],
-    'Restaurantes': ['restaurante','cena','comida','almuerzo','desayuno','bar','cafe','cerveza','tapas','freiduria','pizza','burger','hamburguesa','glovo','delivery'],
+    'Restaurantes': ['restaurante','nestea','refresco','coca','cocacola','cena','comida','almuerzo','desayuno','bar','cafe','cerveza','tapas','freiduria','pizza','burger','hamburguesa','glovo','delivery'],
     'Ocio': ['cine','concierto','padel','pista','futbol','gimnasio','videojuego','juego','libro','copas','copa','loteria','decimo','teatro','entrada','ocio'],
     'Suscripciones': ['suscripcion','netflix','spotify','hbo','disney','amazon prime','prime','icloud','youtube'],
     'Salud': ['farmacia','medico','dentista','optica','fisio','fisioterapeuta','medicina','analisis'],
@@ -487,24 +487,57 @@
   };
   const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
+
+  // Convierte números dichos con palabras a cifras: «dieciocho coma veinte» → «18,20»
+  const UNID = {cero:0,un:1,uno:1,una:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,
+    dieciseis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20,veintiun:21,veintiuno:21,veintiuna:21,veintidos:22,veintitres:23,veinticuatro:24,
+    veinticinco:25,veintiseis:26,veintisiete:27,veintiocho:28,veintinueve:29};
+  const DECE = {treinta:30,cuarenta:40,cincuenta:50,sesenta:60,setenta:70,ochenta:80,noventa:90};
+  const CENT = {cien:100,ciento:100,doscientos:200,doscientas:200,trescientos:300,trescientas:300,cuatrocientos:400,cuatrocientas:400,
+    quinientos:500,quinientas:500,seiscientos:600,seiscientas:600,setecientos:700,setecientas:700,ochocientos:800,ochocientas:800,novecientos:900,novecientas:900};
+  function palabrasANumeros(texto) {
+    const toks = texto.split(/\s+/).filter(Boolean);
+    const out = [];
+    let i = 0;
+    while (i < toks.length) {
+      const w = norm(toks[i]).replace(/[^a-z0-9]/g, '');
+      const esNum = (x) => x in UNID || x in DECE || x in CENT || x === 'mil';
+      if (!esNum(w) || ((w === 'un' || w === 'una') && !esNum(norm(toks[i + 1] || '').replace(/[^a-z]/g, '')) && !/^(euro|euros)$/i.test(toks[i + 1] || ''))) {
+        out.push(toks[i]); i++; continue;
+      }
+      if (w === 'cero') { out.push('0'); i++; continue; }
+      let total = 0, actual = 0, j = i;
+      while (j < toks.length) {
+        const x = norm(toks[j]).replace(/[^a-z]/g, '');
+        if (x in CENT) { actual += CENT[x]; j++; }
+        else if (x in DECE) {
+          actual += DECE[x]; j++;
+          const y = norm(toks[j] || '').replace(/[^a-z]/g, ''), z = norm(toks[j + 1] || '').replace(/[^a-z]/g, '');
+          if (y === 'y' && z in UNID && UNID[z] < 10 && z !== 'cero') { actual += UNID[z]; j += 2; }
+        }
+        else if (x in UNID && x !== 'cero') { actual += UNID[x]; j++; }
+        else if (x === 'mil') { total += (actual || 1) * 1000; actual = 0; j++; }
+        else break;
+      }
+      const sufijo = (toks[j - 1] || '').match(/[,.;:]$/) ? toks[j - 1].slice(-1) : '';
+      out.push(String(total + actual) + sufijo);
+      i = j;
+    }
+    let r = out.join(' ');
+    r = r.replace(/(\d+)\s+(?:coma|punto)\s+0\s+(\d)\b/gi, '$1,0$2');
+    r = r.replace(/(\d+)\s+(?:coma|punto)\s+(\d{1,2})\b/gi, '$1,$2');
+    r = r.replace(/(\d+)\s*(?:euros?|€)\s+(\d{1,2})\b(?!\s*(?:de\s+[a-z]))/gi, '$1,$2');
+    return r;
+  }
+
   function interpretar(texto) {
-    let t = ' ' + texto.trim() + ' ';
+    let t = ' ' + palabrasANumeros(texto.trim()) + ' ';
     let n = norm(t);
     const out = {};
+    let m;
     const p2 = (x) => String(x).padStart(2, '0');
     const iso = (d) => d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
     const quitar = (re) => { t = t.replace(re, ' '); n = norm(t); };
-
-    // importe: «12,50», «12.5», «12 euros con 50», «12 con 50»
-    let m = n.match(/(\d+)\s*(?:euros?|€)?\s*con\s*(\d{1,2})\b(?:\s*(?:centimos?|cts?))?/);
-    if (m) { out.importe = Number(m[1] + '.' + m[2].padStart(2, '0')); quitar(new RegExp(m[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')); }
-    else {
-      m = n.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)?/);
-      if (m) { out.importe = Number(m[1].replace(',', '.')); }
-    }
-    t = t.replace(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)\b/i, ' ');
-    if (out.importe) t = t.replace(new RegExp('\\b' + String(m && m[1] || '').replace(/[.,]/, '[.,]') + '\\b'), ' ');
-    n = norm(t);
 
     // fecha
     const hoy = new Date(); hoy.setHours(12, 0, 0, 0);
@@ -527,6 +560,17 @@
         }
       }
     }
+
+    // importe: «12,50», «12.5», «12 euros con 50», «12 con 50»
+    m = n.match(/(\d+)\s*(?:euros?|€)?\s*con\s*(\d{1,2})\b(?:\s*(?:centimos?|cts?))?/);
+    if (m) { out.importe = Number(m[1] + '.' + m[2].padStart(2, '0')); quitar(new RegExp(m[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')); }
+    else {
+      m = n.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)\b/) || n.match(/(\d+(?:[.,]\d{1,2})?)/);
+      if (m) { out.importe = Number(m[1].replace(',', '.')); }
+    }
+    t = t.replace(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)\b/i, ' ');
+    if (out.importe) t = t.replace(new RegExp('\\b' + String(m && m[1] || '').replace(/[.,]/, '[.,]') + '\\b'), ' ');
+    n = norm(t);
 
     // categoría: nombre exacto o palabras clave
     const cats = state.datos ? state.datos.categorias : Object.keys(PALABRAS);
