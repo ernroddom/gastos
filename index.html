@@ -641,8 +641,42 @@
     store.set(K.theme, t); aplicarTema(t);
   };
 
+  // ---------- Botón/gesto «atrás» de Android: cierra paneles y ajustes en vez de salir de la app
+  const capas = [];          // lo que hay abierto encima de la app: 'setup' y/o 'sheet'
+  let enHistorial = 0;       // pasos que hemos añadido al historial
+  let esperando = false;     // estamos retrocediendo nosotros (no el usuario)
+  function cuadrarHistorial() {
+    if (esperando) return;
+    if (enHistorial < capas.length) {
+      while (enHistorial < capas.length) { history.pushState({ gastos: enHistorial + 1 }, ''); enHistorial++; }
+    } else if (enHistorial > capas.length) {
+      esperando = true; history.go(capas.length - enHistorial);
+    }
+  }
+  function ponerCapa(t) { if (capas[capas.length - 1] !== t) capas.push(t); cuadrarHistorial(); }
+  function quitarCapa(t) {
+    const i = capas.lastIndexOf(t); if (i < 0) return;
+    capas.splice(i, t === 'setup' ? capas.length - i : 1);
+    cuadrarHistorial();
+  }
+  window.addEventListener('popstate', () => {
+    if (esperando) {
+      esperando = false;
+      enHistorial = (history.state && history.state.gastos) || 0;
+      cuadrarHistorial(); return;
+    }
+    enHistorial = (history.state && history.state.gastos) || 0;
+    while (capas.length > enHistorial) {
+      const t = capas.pop();
+      if (t === 'sheet') { if ($('sheetWelcome').classList.contains('open')) store.set(K.visto, APP_VERSION); if (rec) { try { rec.onend = null; rec.abort(); } catch {} rec = null; } cerrarUI(); }
+      else if (t === 'setup') { cerrarUI(); showAppUI(); }
+    }
+    cuadrarHistorial();
+  });
+
   // ---------- Configuración
   function showSetup(editing) {
+    if (editing) ponerCapa('setup');
     $('setup').classList.remove('hidden');
     $('app').classList.add('hidden');
     $('tabbar').classList.add('hidden');
@@ -659,7 +693,8 @@
     $('mailTo').value = (c && c.email) || ''; $('mailOn').checked = !!(c && c.activo); $('mailErr').textContent = '';
     window.scrollTo(0, 0);
   }
-  function showApp() {
+  function showApp() { showAppUI(); quitarCapa('setup'); }
+  function showAppUI() {
     $('setup').classList.add('hidden');
     $('app').classList.remove('hidden');
     $('tabbar').classList.remove('hidden');
@@ -1032,8 +1067,9 @@
   $('btnReload').onclick = cargar;
 
   // ---------- Hojas inferiores
-  function abrir(id) { $('sheetBg').classList.add('open'); $(id).classList.add('open'); }
-  function cerrar() { $('sheetBg').classList.remove('open'); document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open')); }
+  function abrir(id) { $('sheetBg').classList.add('open'); $(id).classList.add('open'); ponerCapa('sheet'); }
+  function cerrarUI() { $('sheetBg').classList.remove('open'); document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open')); }
+  function cerrar() { cerrarUI(); quitarCapa('sheet'); }
   $('sheetBg').onclick = () => { if (rec) { try { rec.onend = null; rec.abort(); } catch {} rec = null; } cerrar(); };
   // arrastrar hacia abajo para cerrar
   document.querySelectorAll('.sheet').forEach(sh => {
@@ -1620,6 +1656,7 @@
 
   // ---------- Bienvenida y novedades
   const NOVEDADES = [
+    '<b>Botón atrás:</b> el gesto de atrás del móvil ahora cierra los ajustes y los paneles abiertos, en vez de salirse de la app.',
     '<b>Lista de la compra:</b> nueva pestaña Compra. Añade escribiendo o por voz («leche, pan y huevos»), se ordena sola por secciones del súper, tacha lo que vas cogiendo y al terminar apunta el gasto.',
     '<b>Ingresos y ahorro:</b> pestaña Ingresos y tarjeta con tu tasa de ahorro en el Resumen. Las aportaciones a inversión no cuentan como gasto.',
     '<b>Vista anual:</b> pulsa «Año» arriba en el Resumen.',
