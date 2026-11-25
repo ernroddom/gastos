@@ -530,9 +530,10 @@
 <div class="sheet" id="sheetCats" role="dialog" aria-label="Categorías y presupuestos">
   <div class="grab"></div>
   <h3>Categorías y presupuestos</h3>
-  <div class="hint" style="text-align:left;margin:-4px 0 12px">Si cambias un nombre, se cambia también en todos los gastos ya apuntados. Deja el presupuesto vacío si no quieres límite.</div>
+  <div class="hint" style="text-align:left;margin:-4px 0 12px">Si cambias un nombre, se cambia también en todos los gastos ya apuntados. Deja el presupuesto vacío si no quieres límite. Las categorías nuevas se añaden al final.</div>
   <div class="cfg-row sub"><span></span><span>Nombre</span><span>€ / mes</span></div>
   <div id="catsEdit"></div>
+  <button class="btn ghost" id="catsAdd" style="color:var(--text);margin-top:10px">+ Añadir categoría</button>
   <button class="btn primary" id="catsSave">Guardar</button>
   <div class="err" id="catsErr"></div>
 </div>
@@ -586,9 +587,11 @@
 (() => {
   // Claves propias de esta app: no comparten nada con otras apps del mismo dominio
   const K = { url: 'gastos.scriptUrl', id: 'gastos.sheetId', cache: 'gastos.cache', tab: 'gastos.tab', theme: 'gastos.theme', pago: 'gastos.pago', cola: 'gastos.cola', visto: 'gastos.versionVista', privado: 'gastos.privado' };
-  const APP_VERSION = '1.0';
+  const APP_VERSION = '1.1';
   // Mismo orden y colores que la pestaña Categorías de la hoja
-  const COLORES = ['#4E79A7','#F28E2B','#59A14F','#76B7B2','#E15759','#EDC948','#B07AA1','#FF9DA7','#9C755F','#79706E','#17BECF','#BAB0AC'];
+  const COLORES = ['#4E79A7','#F28E2B','#59A14F','#76B7B2','#E15759','#EDC948','#B07AA1','#FF9DA7','#9C755F','#79706E','#17BECF','#BAB0AC',
+    '#2E8B57','#D37295','#B6992D','#499894','#FFBE7D','#A0CBE8','#8CD17D','#D4A6C8','#F1CE63','#86BCB6','#FF9D9A','#D7B5A6'];
+  const MAX_CATS = 24;
   const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const eur = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
@@ -1190,11 +1193,12 @@
     $('fMeses').value = '1';
 
     const src = mv || pre;
-    $('fImporte').value = src.importe ? String(src.importe).replace('.', ',') : '';
+    $('fImporte').value = src.importe ? (Number.isInteger(src.importe) ? String(src.importe) : src.importe.toFixed(2).replace('.', ',')) : '';
     $('fImporte').placeholder = '0,00 €';
     $('fConcepto').value = src.concepto || '';
     $('fNotas').value = (mv && mv.notas) || '';
     $('fFecha').value = src.fecha || fechaHoy(); $('fErr').textContent = '';
+    if (!mv && pre.pago) elegirPago(pre.pago);
     if (src.categoria) elegirCat(src.categoria);
     else if (src.concepto) { const h = buscarHist(src.concepto); if (h) { elegirCat(h.categoria); state.catAuto = true; } }
     $('fAviso').textContent = pre.aviso || '';
@@ -1242,22 +1246,42 @@
 
   // ---------- Dictado
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, oido = '';
+  let rec = null, oido = '', micPrevio = '', micReintentos = 0;
   const norm = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const PALABRAS = {
     'Vivienda': ['alquiler','hipoteca','comunidad','reparacion','mueble','casa'],
     'Facturas': ['luz','agua','gas','internet','fibra','movil','telefono','seguro','factura','recibo'],
-    'Compra': ['mantecados','turron','mercadona','supermercado','lidl','carrefour','dia','aldi','compra','mercado','fruteria','panaderia','drogueria'],
+    'Compra': ['mantecados','turron','mercadona','supermercado','lidl','carrefour','aldi','compra','mercado','fruteria','panaderia','drogueria'],
     'Transporte': ['gasolina','gasoil','diesel','parking','aparcamiento','taxi','uber','cabify','bus','autobus','metro','tren','peaje','taller','itv'],
     'Restaurantes': ['restaurante','nestea','refresco','coca','cocacola','cena','comida','almuerzo','desayuno','bar','cafe','cerveza','tapas','freiduria','pizza','burger','hamburguesa','glovo','delivery'],
     'Ocio': ['cine','concierto','padel','pista','futbol','gimnasio','videojuego','juego','libro','copas','copa','loteria','decimo','teatro','entrada','ocio'],
     'Suscripciones': ['suscripcion','netflix','spotify','hbo','disney','amazon prime','prime','icloud','youtube'],
-    'Salud': ['farmacia','medico','dentista','optica','fisio','fisioterapeuta','medicina','analisis'],
+    'Salud': ['farmacia','medico','dentista','optica','fisio','fisioterapeuta','medicina','analisis','peluqueria','peluquero','barberia','barbero','corte de pelo','estetica','masaje','masajes','spa','manicura','pedicura','depilacion','cosmetica','crema'],
+    'Deporte': ['gimnasio','gym','padel','pista','futbol','baloncesto','tenis','piscina','natacion','running','carrera','crossfit','yoga','pilates','bici','bicicleta','deporte','equipacion','raqueta','pelotas'],
     'Ropa': ['ropa','zapatos','zapatillas','camiseta','pantalon','camisa','chaqueta','corbata','abrigo'],
     'Impuestos': ['impuesto','irpf','ibi','hacienda','multa','tasa'],
     'Viajes': ['viaje','hotel','vuelo','avion','airbnb','vacaciones','billete'],
     'Otros': ['regalo','otros','varios']
   };
+  // Palabras clave de una categoría aunque se haya renombrado (p. ej. «Bienestar y salud» usa las de «Salud»)
+  function palabrasDe(c, mapa) {
+    if (mapa[c]) return mapa[c];
+    const nc = norm(c); let out = [];
+    Object.keys(mapa).forEach(k => { if (new RegExp('(^|\\s)' + norm(k) + 's?(\\s|$)').test(nc)) out = out.concat(mapa[k]); });
+    return out;
+  }
+  // Orden para buscar palabras clave: Deporte antes que Ocio y Ropa (pádel, gimnasio, Decathlon…)
+  const ordenClasificar = (cats) => cats.slice().sort((a, b) => (/deporte/.test(norm(b)) ? 1 : 0) - (/deporte/.test(norm(a)) ? 1 : 0));
+  // categoría con más palabras clave en el texto (empate: Deporte primero y luego el orden de la hoja)
+  function mejorCategoria(texto, cats, mapas, extra) {
+    let mejor = null, max = 0;
+    for (const c of ordenClasificar(cats)) {
+      const ws = mapas.reduce((a, mp) => a.concat(palabrasDe(c, mp)), []);
+      const pts = ws.filter(w => new RegExp('\\b' + w + '\\b').test(texto) || (extra && new RegExp('\\b' + w + '\\b').test(extra))).length;
+      if (pts > max) { max = pts; mejor = c; }
+    }
+    return mejor;
+  }
 
 
   // Convierte números dichos con palabras a cifras: «dieciocho coma veinte» → «18,20»
@@ -1304,6 +1328,12 @@
     r = r.replace(/(\d+)\s+(?:coma|punto)\s+0\s+(\d)\b/gi, '$1,0$2');
     r = r.replace(/(\d+)\s+(?:coma|punto)\s+(\d{1,2})\b/gi, '$1,$2');
     r = r.replace(/(\d+)\s*(?:euros?|€)\s+(\d{1,2})\b(?!\s*(?:de\s+[a-z]))/gi, '$1,$2');
+    // «tres noventa» → «3 90», «veintitrés cincuenta» → «23 50»: euros y céntimos dichos seguidos
+    r = r.replace(/(^|[^\d,.\/\wáéíóúñ])(\d{1,3})\s+([1-9]\d)(?=\s|$|[,.;:])(?!\s+(?:de|del)\s)/gi, (m0, a, e, c, off, all) => {
+      const antes = all.slice(0, off + a.length).toLowerCase();
+      if (/(d[ií]a|el|los|las)\s*$/.test(antes)) return m0; // «el día 12 30…» no
+      return a + e + ',' + c;
+    });
     return r;
   }
 
@@ -1318,34 +1348,56 @@
 
     // fecha
     const hoy = new Date(); hoy.setHours(12, 0, 0, 0);
+    const MESRE = '(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)';
+    const ponerFecha = (dia, mes0, anio) => {
+      let y = anio || hoy.getFullYear();
+      let d = new Date(y, mes0, dia, 12);
+      if (!anio && d > hoy) d = new Date(y - 1, mes0, dia, 12);
+      if (d.getMonth() !== mes0 || dia < 1) return false;
+      out.fecha = iso(d); return true;
+    };
+    const DIAS_SEM = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
     if (/\banteayer\b/.test(n)) { const d = new Date(hoy); d.setDate(d.getDate() - 2); out.fecha = iso(d); quitar(/\banteayer\b/i); }
     else if (/\bayer\b/.test(n)) { const d = new Date(hoy); d.setDate(d.getDate() - 1); out.fecha = iso(d); quitar(/\bayer\b/i); }
     else if (/\bhoy\b/.test(n)) { out.fecha = iso(hoy); quitar(/\bhoy\b/i); }
-    else {
-      m = n.match(/\b(?:el\s+)?(?:dia\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/);
-      if (m) {
-        const mes = MESES_L.indexOf(m[2]); let y = hoy.getFullYear();
-        if (mes > hoy.getMonth()) y--;
-        out.fecha = iso(new Date(y, mes, Number(m[1]), 12));
-        quitar(/\b(?:el\s+)?(?:d[ií]a\s+)?\d{1,2}\s+de\s+\S+/i);
-      } else {
-        m = n.match(/\bel\s+dia\s+(\d{1,2})\b/);
-        if (m) {
-          const d = new Date(hoy.getFullYear(), hoy.getMonth(), Number(m[1]), 12);
-          if (d > hoy) d.setMonth(d.getMonth() - 1);
-          out.fecha = iso(d); quitar(/\bel\s+d[ií]a\s+\d{1,2}\b/i);
-        }
+    else if ((m = n.match(new RegExp('(?:\\b(?:el|del)\\s+)?(?:\\bdia\\s+)?\\b(\\d{1,2})\\s+(?:de\\s+|del\\s+mes\\s+de\\s+)?' + MESRE + '\\b(?:\\s+(?:de|del)\\s+(\\d{4}))?')))) {
+      const mes0 = MESES_L.indexOf(m[2] === 'setiembre' ? 'septiembre' : m[2]);
+      if (ponerFecha(Number(m[1]), mes0, m[3] ? Number(m[3]) : 0)) quitar(new RegExp('(?:\\b(?:el|del)\\s+)?(?:\\bd[ií]a\\s+)?\\b\\d{1,2}\\s+(?:de\\s+|del\\s+mes\\s+de\\s+)?' + MESRE + '\\b(?:\\s+(?:de|del)\\s+\\d{4})?', 'i'));
+    }
+    else if ((m = n.match(/(?:\b(?:el|del)\s+)?(?:\bdia\s+)?\b(\d{1,2})\s*(?:\/|-|\s+del\s+)\s*(\d{1,2})(?:\s*[\/-]\s*(\d{2,4}))?\b/)) && Number(m[2]) >= 1 && Number(m[2]) <= 12) {
+      const an = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : 0;
+      if (ponerFecha(Number(m[1]), Number(m[2]) - 1, an)) quitar(/(?:\b(?:el|del)\s+)?(?:\bd[ií]a\s+)?\b\d{1,2}\s*(?:\/|-|\s+del\s+)\s*\d{1,2}(?:\s*[\/-]\s*\d{2,4})?\b/i);
+    }
+    else if ((m = n.match(/(?:\bel\s+)?\bdia\s+(\d{1,2})\b/) || n.match(/\bel\s+(\d{1,2})(?=\s*$|\s*[,.]|\s+(?:en|con|por|de\s+(?!\d)))/))) {
+      const dia = Number(m[1]);
+      if (dia >= 1 && dia <= 31) {
+        let d = new Date(hoy.getFullYear(), hoy.getMonth(), dia, 12);
+        if (d > hoy) d = new Date(hoy.getFullYear(), hoy.getMonth() - 1, dia, 12);
+        out.fecha = iso(d);
+        t = t.replace(new RegExp(m[0].replace(/dia/, 'd[ií]a').replace(/\s+/g, '\\s+'), 'i'), ' '); n = norm(t);
       }
     }
+    else if ((m = n.match(/(?:\bel\s+)?\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)(\s+pasado)?\b/))) {
+      const objetivo = DIAS_SEM.indexOf(m[1]);
+      const d = new Date(hoy); let atras = (d.getDay() - objetivo + 7) % 7;
+      if (atras === 0 && m[2]) atras = 7;
+      d.setDate(d.getDate() - atras); out.fecha = iso(d);
+      quitar(/(?:\bel\s+)?\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)(\s+pasado)?\b/i);
+    }
+
+    // forma de pago
+    const PAGO_RE = [[/\b(?:con|por|en|pagado con|pagu[eé] con)?\s*bizum\b/i, 'Bizum'], [/\b(?:con|en|pagado con|pagu[eé] con)?\s*(?:efectivo|metalico|met[aá]lico|cash)\b/i, 'Efectivo'],
+      [/\b(?:con|por)?\s*(?:la\s+)?tarjeta\b/i, 'Tarjeta'], [/\b(?:con|por)?\s*paypal\b/i, 'PayPal'], [/\bdomiciliad[oa]\b/i, 'Domiciliado'], [/\b(?:por|con)?\s*transferencia\b/i, 'Transferencia']];
+    for (const [re, pg] of PAGO_RE) { if (re.test(n)) { out.pago = pg; t = t.replace(re, ' '); n = norm(t); break; } }
 
     // importe: «12,50», «12.5», «12 euros con 50», «12 con 50»
     m = n.match(/(\d+)\s*(?:euros?|€)?\s*con\s*(\d{1,2})\b(?:\s*(?:centimos?|cts?))?/);
     if (m) { out.importe = Number(m[1] + '.' + m[2].padStart(2, '0')); quitar(new RegExp(m[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')); }
     else {
-      m = n.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)\b/) || n.match(/(\d+(?:[.,]\d{1,2})?)/);
+      m = n.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?\b|€|pavos\b)/) || n.match(/(\d+(?:[.,]\d{1,2})?)/);
       if (m) { out.importe = Number(m[1].replace(',', '.')); }
     }
-    t = t.replace(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|€|pavos)\b/i, ' ');
+    t = t.replace(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?\b|€|pavos\b)/i, ' ').replace(/\s€(?=\s|$)/g, ' ');
     if (out.importe) t = t.replace(new RegExp('\\b' + String(m && m[1] || '').replace(/[.,]/, '[.,]') + '\\b'), ' ');
     n = norm(t);
 
@@ -1355,12 +1407,8 @@
     if (cat && new RegExp('\\b(?:categoria|en)\\s+' + norm(cat) + '\\b').test(n)) {
       quitar(new RegExp('\\b(?:categor[ií]a\\s+)?' + cat + '\\b', 'i'));
     }
-    if (!cat) {
-      for (const c of cats) {
-        const ws = PALABRAS[c] || [];
-        if (ws.some(w => new RegExp('\\b' + w + '\\b').test(n))) { cat = c; break; }
-      }
-    }
+    if (!cat) cat = cats.find(c => norm(c).split(/\s+/).filter(w => w.length >= 5).some(w => new RegExp('(^|\\s)' + w + '(\\s|$)').test(n)));
+    if (!cat) cat = mejorCategoria(n, cats, [PALABRAS]);
     if (cat) out.categoria = cat;
 
     // concepto: lo que queda, sin muletillas
@@ -1381,9 +1429,13 @@
     if (!texto) { toast('No he oído nada'); return; }
     if (state.tab === 'compra') { const n = anadirCompra(texto); toast(n ? 'Añadido: ' + n : 'No he entendido ningún producto'); return; }
     const pre = interpretar(texto);
-    if (!pre.categoria && pre.concepto) {
-      const h = (state.datos && state.datos.historial || []).find(x => norm(pre.concepto).includes(norm(x.concepto)) || norm(x.concepto).includes(norm(pre.concepto)));
-      if (h) { pre.categoria = h.categoria; pre.concepto = h.concepto; }
+    if (pre.concepto) {
+      // si ya lo has apuntado antes, manda tu historial: misma categoría, mismo nombre y misma forma de pago
+      const limpio = (x) => norm(x).replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+      const kc = limpio(pre.concepto), hist = (state.datos && state.datos.historial) || [];
+      const h = hist.find(x => limpio(x.concepto) === kc)
+        || hist.find(x => { const c = limpio(x.concepto); return c.length > 3 && kc.length > 3 && (kc.includes(c) || c.includes(kc)); });
+      if (h) { pre.categoria = h.categoria; pre.concepto = h.concepto; if (!pre.pago && h.pago) pre.pago = h.pago; }
     }
     const falta = [];
     if (!pre.importe) falta.push('el importe');
@@ -1398,9 +1450,9 @@
       if (state.tab === 'compra') abrirAnadirCompra(); else abrirNuevo({ aviso: 'Pulsa el micro del teclado para dictar el concepto.' });
       return;
     }
-    oido = '';
+    oido = ''; micPrevio = ''; micReintentos = 0;
     $('micText').textContent = 'Escuchando…'; $('micErr').textContent = '';
-    $('micHint').textContent = state.tab === 'compra' ? 'Di varios productos seguidos: «leche, pan, huevos y dos de tomate frito».' : 'Por ejemplo: «23,50 en Mercadona», «gasolina 40 euros ayer» o «cena en restaurante 44 euros el día 14».';
+    $('micHint').textContent = state.tab === 'compra' ? 'Di varios productos seguidos: «leche, pan, huevos y dos de tomate frito».' : 'Por ejemplo: «3,90 parking Balme día 12 de noviembre», «gasolina 40 euros ayer» o «23,50 Mercadona con Bizum».';
     abrir('sheetMic');
     rec = new SR();
     rec.lang = 'es-ES'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
@@ -1410,16 +1462,27 @@
         if (e.results[i].isFinal) fin += e.results[i][0].transcript; else tmp += e.results[i][0].transcript;
       }
       oido = (fin || tmp);
-      $('micText').textContent = '«' + (fin + tmp) + '»';
+      $('micText').textContent = '«' + (micPrevio ? micPrevio + ' ' : '') + (fin + tmp) + '»';
     };
     rec.onerror = (e) => {
       $('micErr').textContent = e.error === 'not-allowed' ? 'Da permiso al micrófono en el navegador y vuelve a probar.'
         : e.error === 'no-speech' ? 'No he oído nada. Prueba otra vez.' : 'Error del micrófono: ' + e.error;
     };
-    rec.onend = () => { if (oido.trim()) terminarDictado(true); };
+    rec.onend = () => {
+      const acumulado = (micPrevio + ' ' + oido).trim();
+      if (!acumulado) return;
+      const p = interpretar(acumulado);
+      // si falta el importe o el concepto (te has parado a mitad), escucha otra vez y lo junta
+      if (state.tab !== 'compra' && (!p.importe || !p.concepto) && micReintentos < 2 && $('sheetMic').classList.contains('open')) {
+        micReintentos++; micPrevio = acumulado; oido = '';
+        $('micText').textContent = '«' + acumulado + ' …»';
+        try { rec.start(); return; } catch (err) {}
+      }
+      oido = acumulado; terminarDictado(true);
+    };
     try { rec.start(); } catch (err) { $('micErr').textContent = 'No se pudo iniciar el micrófono.'; }
   };
-  $('micDone').onclick = () => terminarDictado(true);
+  $('micDone').onclick = () => { oido = (micPrevio + ' ' + oido).trim(); micPrevio = ''; terminarDictado(true); };
   $('micCancel').onclick = () => terminarDictado(false);
 
   function leerImporte(txt) {
@@ -1649,14 +1712,31 @@
   // ---------- Ajustes: categorías y presupuestos
   $('btnCats').onclick = () => {
     const d = state.datos; if (!d) { toast('Espera a que carguen los datos'); return; }
-    $('catsEdit').innerHTML = d.categorias.map((c, i) => `<div class="cfg-row"><span class="dot" style="background:${COLORES[i]}"></span>
-      <input data-n="${i}" value="${esc(c)}" autocomplete="off"><input data-p="${i}" inputmode="decimal" placeholder="—" value="${d.presupuestos && d.presupuestos[i] ? String(d.presupuestos[i]).replace('.', ',') : ''}"></div>`).join('');
+    $('catsEdit').innerHTML = d.categorias.map((c, i) => filaCat(i, c, d.presupuestos && d.presupuestos[i] ? String(d.presupuestos[i]).replace('.', ',') : '', false)).join('');
     $('catsErr').textContent = '';
+    $('catsAdd').classList.toggle('hidden', d.categorias.length >= MAX_CATS);
     abrir('sheetCats');
   };
+  function filaCat(i, nombre, pres, nueva) {
+    return `<div class="cfg-row${nueva ? ' nueva' : ''}"><span class="dot" style="background:${COLORES[i % COLORES.length]}"></span>
+      <input data-n="${i}" value="${esc(nombre)}" autocomplete="off"${nueva ? ' placeholder="Nombre de la categoría"' : ''}><input data-p="${i}" inputmode="decimal" placeholder="—" value="${pres}"></div>`;
+  }
+  $('catsAdd').onclick = () => {
+    const n = document.querySelectorAll('#catsEdit input[data-n]').length;
+    if (n >= MAX_CATS) return;
+    $('catsEdit').insertAdjacentHTML('beforeend', filaCat(n, '', '', true));
+    const inp = $('catsEdit').querySelector(`input[data-n="${n}"]`); inp.focus();
+    inp.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    $('catsAdd').classList.toggle('hidden', n + 1 >= MAX_CATS);
+  };
   $('catsSave').onclick = async () => {
-    const nombres = [...document.querySelectorAll('#catsEdit input[data-n]')].map(x => x.value.trim());
-    const presupuestos = [...document.querySelectorAll('#catsEdit input[data-p]')].map(x => x.value.trim() ? leerImporte(x.value) : 0);
+    let filas = [...document.querySelectorAll('#catsEdit .cfg-row')].map(r => ({ n: r.querySelector('input[data-n]').value.trim(), p: r.querySelector('input[data-p]').value.trim(), nueva: r.classList.contains('nueva') }));
+    filas = filas.filter(f => !(f.nueva && !f.n)); // filas nuevas que se dejaron vacías: se ignoran
+    if (filas.some(f => !f.n)) { $('catsErr').textContent = 'Todas las categorías necesitan nombre'; return; }
+    const vistos = {}; for (const f of filas) { const k = norm(f.n); if (vistos[k]) { $('catsErr').textContent = 'Hay dos categorías llamadas «' + f.n + '»'; return; } vistos[k] = 1; }
+    if (filas.length > state.datos.categorias.length && (state.datos.version || 5) < 6) { $('catsErr').textContent = 'Para añadir categorías, actualiza antes el script a la versión 1.1'; return; }
+    const nombres = filas.map(f => f.n.charAt(0).toUpperCase() + f.n.slice(1));
+    const presupuestos = filas.map(f => f.p ? leerImporte(f.p) : 0);
     loading(true); $('catsErr').textContent = '';
     try { await api({ action: 'guardarCategorias', nombres, presupuestos }, true); cerrar(); toast('Categorías guardadas'); store.del(K.cache); await cargar(); }
     catch (e) { $('catsErr').textContent = e.offline ? 'Necesitas conexión' : e.message; }
@@ -1679,6 +1759,8 @@
 
   // ---------- Bienvenida y novedades
   const NOVEDADES = [
+    '<b>Dictado mejorado:</b> entiende «3,90 parking Balme día 12 de noviembre», «tres noventa», «el 12/11», «el lunes» y «con Bizum / en efectivo». Si te paras a mitad de frase, sigue escuchando.',
+    '<b>Categorías nuevas:</b> en Ajustes › Categorías y presupuestos ya puedes añadir categorías con «+ Añadir categoría».',
     '<b>Modo privado:</b> pulsa el ojo (en Resumen e Ingresos) para emborronar las cantidades. Para actualizar, arrastra la pantalla hacia abajo.',
     '<b>Botón atrás:</b> el gesto de atrás del móvil ahora cierra los ajustes y los paneles abiertos, en vez de salirse de la app.',
     '<b>Lista de la compra:</b> nueva pestaña Compra. Añade escribiendo o por voz («leche, pan y huevos»), se ordena sola por secciones del súper, tacha lo que vas cogiendo y al terminar apunta el gasto.',
@@ -1840,7 +1922,7 @@
       || hist.find(x => palabras(x.concepto).some(w => pk.includes(w)));
     const cats = (state.datos && state.datos.categorias) || [];
     let cat = h ? h.categoria : null;
-    if (!cat) for (const c of cats) { if ((PALABRAS[c] || []).concat(EXTRA_IMP[c] || []).some(w => new RegExp('\\b' + w + '\\b').test(k) || new RegExp('\\b' + w + '\\b').test(k2))) { cat = c; break; } }
+    if (!cat) cat = mejorCategoria(k, cats, [PALABRAS, EXTRA_IMP], k2);
     base.categoria = cat && cats.includes(cat) ? cat : (cats.includes('Otros') ? 'Otros' : cats[cats.length - 1]);
     base.pago = /bizum/.test(k) ? 'Bizum' : /recibo|adeudo|domicil|cargo rec/.test(k) ? 'Domiciliado' : /paypal/.test(k) ? 'PayPal' : /transferencia/.test(k) ? 'Transferencia' : (h && h.pago) || 'Tarjeta';
     if (h) base.concepto = h.concepto;
@@ -1848,7 +1930,7 @@
     base.original = m.concepto;
     return Object.assign(base, { tipo: 'gasto' });
   }
-  const EXTRA_IMP = { 'Ocio': ['playtomic', 'steam', 'playstation', 'nintendo', 'xbox', 'cinesa', 'yelmo', 'fnac', 'ticketmaster'], 'Compra': ['consum', 'eroski', 'alcampo', 'hipercor', 'supercor', 'covirán', 'coviran', 'ahorramas'], 'Transporte': ['petroprix', 'repsol', 'cepsa', 'galp', 'shell', 'bp', 'renfe', 'alsa', 'emt', 'tussam', 'parking'], 'Suscripciones': ['spotify', 'netflix', 'hbo', 'disney', 'apple com', 'google', 'icloud'], 'Ropa': ['zara', 'primark', 'decathlon', 'pull', 'bershka', 'mango', 'hm'], 'Salud': ['farmacia', 'clinica', 'dental', 'optica'], 'Impuestos': ['irpf', 'aeat', 'tributos', 'ibi', 'hacienda', 'dgt'], 'Facturas': ['endesa', 'iberdrola', 'naturgy', 'emasesa', 'aljarafesa', 'movistar', 'vodafone', 'orange', 'digi', 'mapfre'], 'Restaurantes': ['restaurante', 'bar ', 'cafeteria', 'telepizza', 'mcdonald', 'burger', 'just eat', 'glovo', 'uber eats'] };
+  const EXTRA_IMP = { 'Ocio': ['playtomic', 'steam', 'playstation', 'nintendo', 'xbox', 'cinesa', 'yelmo', 'fnac', 'ticketmaster'], 'Compra': ['dia retail', 'supermercados dia', 'consum', 'eroski', 'alcampo', 'hipercor', 'supercor', 'covirán', 'coviran', 'ahorramas'], 'Transporte': ['petroprix', 'repsol', 'cepsa', 'galp', 'shell', 'bp', 'renfe', 'alsa', 'emt', 'tussam', 'parking'], 'Suscripciones': ['spotify', 'netflix', 'hbo', 'disney', 'apple com', 'google', 'icloud'], 'Ropa': ['zara', 'primark', 'decathlon', 'pull', 'bershka', 'mango', 'hm'], 'Salud': ['farmacia', 'clinica', 'dental', 'optica', 'peluqueria', 'barberia', 'estetica'], 'Deporte': ['playtomic', 'decathlon', 'basic fit', 'altafit', 'mcfit', 'vivagym', 'gimnasio'], 'Impuestos': ['irpf', 'aeat', 'tributos', 'ibi', 'hacienda', 'dgt'], 'Facturas': ['endesa', 'iberdrola', 'naturgy', 'emasesa', 'aljarafesa', 'movistar', 'vodafone', 'orange', 'digi', 'mapfre'], 'Restaurantes': ['restaurante', 'bar ', 'cafeteria', 'telepizza', 'mcdonald', 'burger', 'just eat', 'glovo', 'uber eats'] };
   let impItems = [];
   async function prepararRevision(movs) {
     impItems = movs.map(clasificar);
