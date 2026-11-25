@@ -532,7 +532,7 @@
 <div class="sheet" id="sheetCats" role="dialog" aria-label="Categorías y presupuestos">
   <div class="grab"></div>
   <h3>Categorías y presupuestos</h3>
-  <div class="hint" style="text-align:left;margin:-4px 0 12px">Si cambias un nombre, se cambia también en todos los gastos ya apuntados. Deja el presupuesto vacío si no quieres límite. Las categorías nuevas se añaden al final.</div>
+  <div class="hint" style="text-align:left;margin:-4px 0 12px">Si cambias un nombre, se cambia también en todos los gastos ya apuntados. Deja el presupuesto vacío si no quieres límite. Las categorías nuevas se añaden al final, justo encima de «Otros».</div>
   <div class="cfg-row sub"><span></span><span>Nombre</span><span>€ / mes</span></div>
   <div id="catsEdit"></div>
   <button class="btn ghost" id="catsAdd" style="color:var(--text);margin-top:10px">+ Añadir categoría</button>
@@ -611,7 +611,16 @@
 
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function color(cat) { const i = state.datos ? state.datos.categorias.indexOf(cat) : -1; return i >= 0 ? COLORES[i % COLORES.length] : '#888'; }
+  // «Otros» siempre gris; el resto toma los colores en orden saltándose el gris (igual que en la hoja)
+  const GRIS_OTROS = '#BAB0AC';
+  const esOtros = (c) => String(c || '').trim().toLowerCase() === 'otros';
+  function colorCat(cats, i) {
+    if (esOtros(cats[i])) return GRIS_OTROS;
+    const paleta = COLORES.filter(c => c !== GRIS_OTROS);
+    let j = 0; for (let k = 0; k < i; k++) if (!esOtros(cats[k])) j++;
+    return paleta[j % paleta.length];
+  }
+  function color(cat) { const cats = state.datos ? state.datos.categorias : []; const i = cats.indexOf(cat); return i >= 0 ? colorCat(cats, i) : '#888'; }
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200); }
   function loading(on) { $('loading').classList.toggle('on', on); }
 
@@ -853,7 +862,7 @@
 
     // presupuestos y categorías
     const pres = d.presupuestos || [];
-    const items = d.categorias.map((c, i) => ({ c, v: fila[i] || 0, b: pres[i] || null, col: COLORES[i % COLORES.length] }))
+    const items = d.categorias.map((c, i) => ({ c, v: fila[i] || 0, b: pres[i] || null, col: colorCat(d.categorias, i) }))
       .filter(x => x.v > 0 || x.b).sort((a, b) => b.v - a.v || (b.b || 0) - (a.b || 0));
     const sinPres = items.filter(x => !x.b);
     const max = sinPres.length ? Math.max(...sinPres.map(x => x.v), 1) : 1;
@@ -892,7 +901,7 @@
       ? 'Total ' + state.anio + ': ' + eur.format(totAnio) + ' · media de ' + eur.format(totAnio / conGasto.length) + ' en los meses con gastos'
       : '';
     $('chart').innerHTML = d.porMes.map((r, m) => {
-      const segs = r.map((v, i) => v > 0 ? `<div class="seg" style="height:${(v / tmax * 100).toFixed(2)}%;background:${COLORES[i % COLORES.length]}"></div>` : '').join('');
+      const segs = r.map((v, i) => v > 0 ? `<div class="seg" style="height:${(v / tmax * 100).toFixed(2)}%;background:${colorCat(d.categorias, i)}"></div>` : '').join('');
       return `<div class="col ${m === state.mes - 1 ? 'sel' : ''}" data-m="${m + 1}" title="${eur.format(tot[m])}">${segs}</div>`;
     }).join('');
     $('chartLbls').innerHTML = MESES.map((n, m) => `<span class="${m === state.mes - 1 ? 'sel' : ''}">${n[0]}</span>`).join('');
@@ -1163,7 +1172,7 @@
     const cats = state.datos ? state.datos.categorias : [];
     const hist = (state.datos && state.datos.historial) || [];
     state.cat = null; state.catAuto = false;
-    $('fCats').innerHTML = cats.map((c, i) => `<button class="chip" data-c="${esc(c)}" data-col="${COLORES[i % COLORES.length]}"><span class="dot" style="background:${COLORES[i % COLORES.length]}"></span>${esc(c)}</button>`).join('')
+    $('fCats').innerHTML = cats.map((c, i) => `<button class="chip" data-c="${esc(c)}" data-col="${colorCat(cats, i)}"><span class="dot" style="background:${colorCat(cats, i)}"></span>${esc(c)}</button>`).join('')
       || '<div class="sub">Recarga para ver las categorías</div>';
     $('fCats').querySelectorAll('.chip').forEach(b => b.onclick = () => {
       state.cat = b.dataset.c; state.catAuto = false;
@@ -1647,11 +1656,11 @@
         ${apo ? `<div class="cmp">Invertido en el año: <b>${eur.format(apo)}</b></div>` : ''}</div>`;
     }
     if (total > 0) h += `<div class="cmp" style="margin-top:12px">Mes más caro: <b>${MESES_L[maxMes]}</b> (${eur.format(totMes[maxMes])})</div>`;
-    const items = cats.map((c, i) => ({ c, v: porCat[i], col: COLORES[i % COLORES.length] })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+    const items = cats.map((c, i) => ({ c, v: porCat[i], col: colorCat(cats, i) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
     const max = items.length ? items[0].v : 1;
     h += `<div class="card"><h2>Por categoría en ${state.anio}</h2>${items.map(x => `<div class="cat-row" style="cursor:default"><div class="lbl"><span class="dot" style="background:${x.col}"></span>${esc(x.c)}<span class="pct">${(x.v / total * 100).toFixed(1).replace('.', ',')}%</span></div><div class="amt">${eur.format(x.v)}</div><div class="bar"><i style="width:${(x.v / max * 100).toFixed(1)}%;background:${x.col}"></i></div></div>`).join('') || '<div class="empty">Sin gastos este año</div>'}</div>`;
     const tmax = Math.max(...totMes, 1);
-    h += `<div class="card"><h2>Mes a mes</h2><div class="chart">${d.porMes.map((r, m) => `<div class="col" data-m="${m + 1}">${r.map((v, i) => v > 0 ? `<div class="seg" style="height:${(v / tmax * 100).toFixed(2)}%;background:${COLORES[i % COLORES.length]}"></div>` : '').join('')}</div>`).join('')}</div>
+    h += `<div class="card"><h2>Mes a mes</h2><div class="chart">${d.porMes.map((r, m) => `<div class="col" data-m="${m + 1}">${r.map((v, i) => v > 0 ? `<div class="seg" style="height:${(v / tmax * 100).toFixed(2)}%;background:${colorCat(cats, i)}"></div>` : '').join('')}</div>`).join('')}</div>
       <div class="chart-lbls">${MESES.map(n => `<span>${n[0]}</span>`).join('')}</div><div class="sub" style="margin-top:10px">Toca un mes para verlo en detalle.</div></div>`;
     $('vistaAnio').innerHTML = h;
     $('vistaAnio').querySelectorAll('.chart .col').forEach(el => el.onclick = () => { state.mes = Number(el.dataset.m); setVista('mes'); cargar(); });
@@ -1723,25 +1732,30 @@
   // ---------- Ajustes: categorías y presupuestos
   $('btnCats').onclick = () => {
     const d = state.datos; if (!d) { toast('Espera a que carguen los datos'); return; }
-    $('catsEdit').innerHTML = d.categorias.map((c, i) => filaCat(i, c, d.presupuestos && d.presupuestos[i] ? String(d.presupuestos[i]).replace('.', ',') : '', false)).join('');
+    $('catsEdit').innerHTML = d.categorias.map((c, i) => filaCat(i, c, d.presupuestos && d.presupuestos[i] ? String(d.presupuestos[i]).replace('.', ',') : '', false, colorCat(d.categorias, i))).join('');
     $('catsErr').textContent = '';
     $('catsAdd').classList.toggle('hidden', d.categorias.length >= MAX_CATS);
     abrir('sheetCats');
   };
-  function filaCat(i, nombre, pres, nueva) {
-    return `<div class="cfg-row${nueva ? ' nueva' : ''}"><span class="dot" style="background:${COLORES[i % COLORES.length]}"></span>
+  function filaCat(i, nombre, pres, nueva, col) {
+    return `<div class="cfg-row${nueva ? ' nueva' : ''}"><span class="dot" style="background:${col}"></span>
       <input data-n="${i}" value="${esc(nombre)}" autocomplete="off"${nueva ? ' placeholder="Nombre de la categoría"' : ''}><input data-p="${i}" inputmode="decimal" placeholder="—" value="${pres}"></div>`;
   }
   $('catsAdd').onclick = () => {
     const n = document.querySelectorAll('#catsEdit input[data-n]').length;
     if (n >= MAX_CATS) return;
-    $('catsEdit').insertAdjacentHTML('beforeend', filaCat(n, '', '', true));
+    // las nuevas van justo encima de «Otros», que siempre se queda la última
+    const base = state.datos.categorias, extra = n - base.length + 1;
+    const html = filaCat(n, '', '', true, colorCat(base.concat(Array(extra).fill('nueva')), n));
+    const filaOtros = [...$('catsEdit').querySelectorAll('.cfg-row')].find(r => !r.classList.contains('nueva') && esOtros(base[Number(r.querySelector('input[data-n]').dataset.n)]));
+    if (filaOtros) filaOtros.insertAdjacentHTML('beforebegin', html); else $('catsEdit').insertAdjacentHTML('beforeend', html);
     const inp = $('catsEdit').querySelector(`input[data-n="${n}"]`); inp.focus();
     inp.scrollIntoView({ block: 'center', behavior: 'smooth' });
     $('catsAdd').classList.toggle('hidden', n + 1 >= MAX_CATS);
   };
   $('catsSave').onclick = async () => {
-    let filas = [...document.querySelectorAll('#catsEdit .cfg-row')].map(r => ({ n: r.querySelector('input[data-n]').value.trim(), p: r.querySelector('input[data-p]').value.trim(), nueva: r.classList.contains('nueva') }));
+    // se envían en el orden original (las nuevas al final); el script coloca «Otros» la última
+    let filas = [...document.querySelectorAll('#catsEdit .cfg-row')].map(r => ({ i: Number(r.querySelector('input[data-n]').dataset.n), n: r.querySelector('input[data-n]').value.trim(), p: r.querySelector('input[data-p]').value.trim(), nueva: r.classList.contains('nueva') })).sort((a, b) => a.i - b.i);
     filas = filas.filter(f => !(f.nueva && !f.n)); // filas nuevas que se dejaron vacías: se ignoran
     if (filas.some(f => !f.n)) { $('catsErr').textContent = 'Todas las categorías necesitan nombre'; return; }
     const vistos = {}; for (const f of filas) { const k = norm(f.n); if (vistos[k]) { $('catsErr').textContent = 'Hay dos categorías llamadas «' + f.n + '»'; return; } vistos[k] = 1; }
